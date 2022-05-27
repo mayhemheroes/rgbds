@@ -1,0 +1,5 @@
+project: rnshah9/rgbds
+target: rgbds
+
+cmds:
+  - cmd: /bin/rgbasm @@
