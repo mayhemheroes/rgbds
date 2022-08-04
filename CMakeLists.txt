@@ -10,7 +10,7 @@
 cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 
 project(rgbds
-        LANGUAGES C)
+        LANGUAGES C CXX)
 
 # get real path of source and binary directories
 get_filename_component(srcdir "${CMAKE_SOURCE_DIR}" REALPATH)
@@ -29,8 +29,18 @@ option(MORE_WARNINGS "Turn on more warnings" OFF) # Ignored on MSVC
 if(MSVC)
   # MSVC's standard library triggers warning C5105,
   # "macro expansion producing 'defined' has undefined behavior"
-  add_compile_options(/std:c11 /W1 /MP /wd5105)
+  add_compile_options(/MP /wd5105)
   add_definitions(/D_CRT_SECURE_NO_WARNINGS)
+  # Also, CMake appears not to pass the C11-enabling flag, so we must add it manually... but only for C!
+  if(NOT CMAKE_C_FLAGS MATCHES "std:c11") # The flag may already have been injected by an earlier CMake invocation, so don't add it twice
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std:c11" CACHE STRING "Flags used by the C compiler during all build types." FORCE)
+  endif()
+
+  if(SANITIZERS)
+    set(SAN_FLAGS /fsanitize=address)
+    add_compile_options(${SAN_FLAGS})
+    add_link_options(${SAN_FLAGS})
+  endif()
 else()
   add_compile_options(-Wall -pedantic)
   add_definitions(-D_POSIX_C_SOURCE=200809L -D_ISOC11_SOURCE)
@@ -41,18 +51,18 @@ else()
                   -fsanitize=object-size -fsanitize=bool -fsanitize=enum
                   -fsanitize=alignment -fsanitize=null -fsanitize=address)
     add_compile_options(${SAN_FLAGS})
-    link_libraries(${SAN_FLAGS})
+    add_link_options(${SAN_FLAGS})
     # A non-zero optimization level is desired in debug mode, but allow overriding it nonetheless
     # TODO: this overrides anything previously set... that's a bit sloppy!
     set(CMAKE_C_FLAGS_DEBUG "-g -Og -fno-omit-frame-pointer -fno-optimize-sibling-calls" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -Og -fno-omit-frame-pointer -fno-optimize-sibling-calls" CACHE STRING "" FORCE)
   endif()
 
   if(MORE_WARNINGS)
     add_compile_options(-Werror -Wextra
                         -Walloc-zero -Wcast-align -Wcast-qual -Wduplicated-branches -Wduplicated-cond
-                        -Wfloat-equal -Winline -Wlogical-op -Wnested-externs -Wnull-dereference
-                        -Wold-style-definition -Wshift-overflow=2 -Wstrict-overflow=5
-                        -Wstrict-prototypes -Wstringop-overflow=4 -Wundef -Wuninitialized -Wunused
+                        -Wfloat-equal -Wlogical-op -Wnull-dereference -Wshift-overflow=2
+                        -Wstringop-overflow=4 -Wstrict-overflow=5 -Wundef -Wuninitialized -Wunused
                         -Wshadow # TODO: -Wshadow=compatible-local ?
                         -Wformat=2 -Wformat-overflow=2 -Wformat-truncation=1
                         -Wno-format-nonliteral # We have a couple of "dynamic" prints
@@ -77,12 +87,23 @@ else(GIT)
   message(STATUS "Cannot determine RGBDS version (Git not installed), falling back")
 endif(GIT)
 
+find_package(PkgConfig)
+if(MSVC OR NOT PKG_CONFIG_FOUND)
+  # fallback to find_package
+  find_package(PNG REQUIRED)
+else()
+  pkg_check_modules(LIBPNG REQUIRED libpng)
+endif()
+
 include_directories("${PROJECT_SOURCE_DIR}/include")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_subdirectory(src)
+add_subdirectory(test)
 
 # By default, build in Release mode; Debug mode must be explicitly requested
 # (You may want to augment it with the options above)

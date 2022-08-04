@@ -23,7 +23,7 @@ If you want to contribute or maintain RGBDS, and have questions regarding the co
 -------------------
 
 The `installation procedure <https://rgbds.gbdev.io/install>`__ is available
-online for various platforms. `Building from source <https://rgbds.gbdev.io/install/source>`__
+online for various platforms. `Building from source <https://rgbds.gbdev.io/install/#building-from-source>`__
 is possible using ``make`` or ``cmake``; follow the link for more detailed instructions.
 
 .. code:: sh
@@ -129,3 +129,11 @@ The RGBDS source code file structure somewhat resembles the following:
 - 2018, codebase relicensed under the MIT license.
 
 - 2020, repository is moved to the `gbdev <https://github.com/gbdev>`__ organisation. The `rgbds.gbdev.io <https://rgbds.gbdev.io>`__ website serving documentation and downloads is created.
+
+4. Acknowledgements
+-------------------
+
+RGBGFX generates palettes using algorithms found in the paper
+`"Algorithms for the Pagination Problem, a Bin Packing with Overlapping Items" <http://arxiv.org/abs/1605.00558>`__
+(`GitHub <https://github.com/pagination-problem/pagination>`__, MIT license),
+by Aristide Grange, Imed Kacem, and Sébastien Martin.

@@ -14,14 +14,6 @@ set(common_src
     "_version.c"
     )
 
-find_package(PkgConfig)
-if(MSVC OR NOT PKG_CONFIG_FOUND)
-  # fallback to find_package
-  find_package(PNG REQUIRED)
-else()
-  pkg_check_modules(LIBPNG REQUIRED libpng)
-endif()
-
 find_package(BISON REQUIRED)
 set(BISON_FLAGS "-Wall")
 # Set sompe optimization flags on versions that support them
@@ -70,9 +62,16 @@ set(rgbfix_src
     )
 
 set(rgbgfx_src
-    "gfx/gb.c"
-    "gfx/main.c"
-    "gfx/makepng.c"
+    "gfx/main.cpp"
+    "gfx/pal_packing.cpp"
+    "gfx/pal_sorting.cpp"
+    "gfx/pal_spec.cpp"
+    "gfx/process.cpp"
+    "gfx/proto_palette.cpp"
+    "gfx/reverse.cpp"
+    "gfx/rgba.cpp"
+    "extern/getopt.c"
+    "error.c"
     )
 
 set(rgblink_src
@@ -82,6 +81,7 @@ set(rgblink_src
     "link/output.c"
     "link/patch.c"
     "link/script.c"
+    "link/sdas_obj.c"
     "link/section.c"
     "link/symbol.c"
     "hashmap.c"

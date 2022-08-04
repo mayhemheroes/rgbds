@@ -18,6 +18,7 @@
 #include "link/section.h"
 
 #include "error.h"
+#include "linkdefs.h"
 
 FILE *linkerScript;
 char *includeFileName;
@@ -299,7 +300,7 @@ static struct LinkerScriptToken *nextToken(void)
 		if (token.type == TOKEN_INVALID) {
 			/* Try to match a bank specifier */
 			for (enum SectionType type = 0; type < SECTTYPE_INVALID; type++) {
-				if (!strcmp(typeNames[type], str)) {
+				if (!strcmp(sectionTypeInfo[type].name, str)) {
 					token.type = TOKEN_BANK;
 					token.attr.secttype = type;
 					break;
@@ -365,8 +366,7 @@ static enum LinkerScriptParserState parserState = PARSER_FIRSTTIME;
 
 struct SectionPlacement *script_NextSection(void)
 {
-	static struct SectionPlacement section;
-	static enum SectionType type;
+	static struct SectionPlacement placement;
 	static uint32_t bank;
 	static uint32_t bankID;
 
@@ -377,10 +377,10 @@ struct SectionPlacement *script_NextSection(void)
 		for (enum SectionType i = 0; i < SECTTYPE_INVALID; i++) {
 			curaddr[i] = malloc(sizeof(*curaddr[i]) * nbbanks(i));
 			for (uint32_t b = 0; b < nbbanks(i); b++)
-				curaddr[i][b] = startaddr[i];
+				curaddr[i][b] = sectionTypeInfo[i].startAddr;
 		}
 
-		type = SECTTYPE_INVALID;
+		placement.type = SECTTYPE_INVALID;
 
 		parserState = PARSER_LINESTART;
 	}
@@ -392,15 +392,15 @@ struct SectionPlacement *script_NextSection(void)
 		bool hasArg;
 		uint32_t arg;
 
-		if (type != SECTTYPE_INVALID) {
-			if (curaddr[type][bankID] > endaddr(type) + 1)
+		if (placement.type != SECTTYPE_INVALID) {
+			if (curaddr[placement.type][bankID] > endaddr(placement.type) + 1)
 				errx("%s(%" PRIu32 "): Sections would extend past the end of %s ($%04" PRIx16 " > $%04" PRIx16 ")",
-				     linkerScriptName, lineNo, typeNames[type],
-				     curaddr[type][bankID], endaddr(type));
-			if (curaddr[type][bankID] < startaddr[type])
+				     linkerScriptName, lineNo, sectionTypeInfo[placement.type].name,
+				     curaddr[placement.type][bankID], endaddr(placement.type));
+			if (curaddr[placement.type][bankID] < sectionTypeInfo[placement.type].startAddr)
 				errx("%s(%" PRIu32 "): PC underflowed ($%04" PRIx16 " < $%04" PRIx16 ")",
 				     linkerScriptName, lineNo,
-				     curaddr[type][bankID], startaddr[type]);
+				     curaddr[placement.type][bankID], sectionTypeInfo[placement.type].startAddr);
 		}
 
 		switch (parserState) {
@@ -431,21 +431,21 @@ struct SectionPlacement *script_NextSection(void)
 			case TOKEN_STRING:
 				parserState = PARSER_LINEEND;
 
-				if (type == SECTTYPE_INVALID)
+				if (placement.type == SECTTYPE_INVALID)
 					errx("%s(%" PRIu32 "): Didn't specify a location before the section",
 					     linkerScriptName, lineNo);
 
-				section.section =
+				placement.section =
 					sect_GetSection(token->attr.string);
-				if (!section.section)
+				if (!placement.section)
 					errx("%s(%" PRIu32 "): Unknown section \"%s\"",
 					     linkerScriptName, lineNo,
 					     token->attr.string);
-				section.org = curaddr[type][bankID];
-				section.bank = bank;
+				placement.org = curaddr[placement.type][bankID];
+				placement.bank = bank;
 
-				curaddr[type][bankID] += section.section->size;
-				return &section;
+				curaddr[placement.type][bankID] += placement.section->size;
+				return &placement;
 
 			case TOKEN_COMMAND:
 			case TOKEN_BANK:
@@ -466,35 +466,35 @@ struct SectionPlacement *script_NextSection(void)
 				arg = hasArg ? token->attr.number : 0;
 
 				if (tokType == TOKEN_COMMAND) {
-					if (type == SECTTYPE_INVALID)
+					if (placement.type == SECTTYPE_INVALID)
 						errx("%s(%" PRIu32 "): Didn't specify a location before the command",
 						     linkerScriptName, lineNo);
 					if (!hasArg)
 						errx("%s(%" PRIu32 "): Command specified without an argument",
 						     linkerScriptName, lineNo);
 
-					processCommand(attr.command, arg, &curaddr[type][bankID]);
+					processCommand(attr.command, arg, &curaddr[placement.type][bankID]);
 				} else { /* TOKEN_BANK */
-					type = attr.secttype;
+					placement.type = attr.secttype;
 					/*
 					 * If there's only one bank,
 					 * specifying the number is optional.
 					 */
-					if (!hasArg && nbbanks(type) != 1)
+					if (!hasArg && nbbanks(placement.type) != 1)
 						errx("%s(%" PRIu32 "): Didn't specify a bank number",
 						     linkerScriptName, lineNo);
 					else if (!hasArg)
-						arg = bankranges[type][0];
-					else if (arg < bankranges[type][0])
+						arg = sectionTypeInfo[placement.type].firstBank;
+					else if (arg < sectionTypeInfo[placement.type].firstBank)
 						errx("%s(%" PRIu32 "): specified bank number is too low (%" PRIu32 " < %" PRIu32 ")",
 						     linkerScriptName, lineNo,
-						     arg, bankranges[type][0]);
-					else if (arg > bankranges[type][1])
+						     arg, sectionTypeInfo[placement.type].firstBank);
+					else if (arg > sectionTypeInfo[placement.type].lastBank)
 						errx("%s(%" PRIu32 "): specified bank number is too high (%" PRIu32 " > %" PRIu32 ")",
 						     linkerScriptName, lineNo,
-						     arg, bankranges[type][1]);
+						     arg, sectionTypeInfo[placement.type].lastBank);
 					bank = arg;
-					bankID = arg - bankranges[type][0];
+					bankID = arg - sectionTypeInfo[placement.type].firstBank;
 				}
 
 				/* If we read a token we shouldn't have... */

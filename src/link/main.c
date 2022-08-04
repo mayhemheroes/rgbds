@@ -18,16 +18,18 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "link/object.h"
-#include "link/symbol.h"
-#include "link/section.h"
 #include "link/assign.h"
-#include "link/patch.h"
+#include "link/object.h"
 #include "link/output.h"
+#include "link/patch.h"
+#include "link/section.h"
+#include "link/script.h"
+#include "link/symbol.h"
 
 #include "extern/getopt.h"
 
 #include "error.h"
+#include "linkdefs.h"
 #include "platform.h"
 #include "version.h"
 
@@ -349,6 +351,12 @@ next:
 	}
 }
 
+_Noreturn void reportErrors(void) {
+	fprintf(stderr, "Linking failed with %" PRIu32 " error%s\n",
+		nbErrors, nbErrors == 1 ? "" : "s");
+	exit(1);
+}
+
 int main(int argc, char *argv[])
 {
 	int optionChar;
@@ -432,31 +440,79 @@ int main(int argc, char *argv[])
 
 	/* Patch the size array depending on command-line options */
 	if (!is32kMode)
-		maxsize[SECTTYPE_ROM0] = 0x4000;
+		sectionTypeInfo[SECTTYPE_ROM0].size = 0x4000;
 	if (!isWRA0Mode)
-		maxsize[SECTTYPE_WRAM0] = 0x1000;
+		sectionTypeInfo[SECTTYPE_WRAM0].size = 0x1000;
 
 	/* Patch the bank ranges array depending on command-line options */
 	if (isDmgMode)
-		bankranges[SECTTYPE_VRAM][1] = BANK_MIN_VRAM;
+		sectionTypeInfo[SECTTYPE_VRAM].lastBank = 0;
 
 	/* Read all object files first, */
 	for (obj_Setup(argc - curArgIndex); curArgIndex < argc; curArgIndex++)
 		obj_ReadFile(argv[curArgIndex], argc - curArgIndex - 1);
 
+	/* apply the linker script's modifications, */
+	if (linkerScriptName) {
+		verbosePrint("Reading linker script...\n");
+
+		linkerScript = openFile(linkerScriptName, "r");
+
+		/* Modify all sections according to the linker script */
+		struct SectionPlacement *placement;
+
+		while ((placement = script_NextSection())) {
+			struct Section *section = placement->section;
+
+			assert(section->offset == 0);
+			/* Check if this doesn't conflict with what the code says */
+			if (section->type == SECTTYPE_INVALID) {
+				for (struct Section *sect = section; sect; sect = sect->nextu)
+					sect->type = placement->type; // SDCC "unknown" sections
+			} else if (section->type != placement->type) {
+				error(NULL, 0, "Linker script contradicts \"%s\"'s type",
+				      section->name);
+			}
+			if (section->isBankFixed && placement->bank != section->bank)
+				error(NULL, 0, "Linker script contradicts \"%s\"'s bank placement",
+				      section->name);
+			if (section->isAddressFixed && placement->org != section->org)
+				error(NULL, 0, "Linker script contradicts \"%s\"'s address placement",
+				      section->name);
+			if (section->isAlignFixed
+			 && (placement->org & section->alignMask) != 0)
+				error(NULL, 0, "Linker script contradicts \"%s\"'s alignment",
+				      section->name);
+
+			section->isAddressFixed = true;
+			section->org = placement->org;
+			section->isBankFixed = true;
+			section->bank = placement->bank;
+			section->isAlignFixed = false; /* The alignment is satisfied */
+		}
+
+		fclose(linkerScript);
+
+		script_Cleanup();
+
+		// If the linker script produced any errors, some sections may be in an invalid state
+		if (nbErrors != 0)
+			reportErrors();
+	}
+
+
 	/* then process them, */
 	obj_DoSanityChecks();
+	if (nbErrors != 0)
+		reportErrors();
 	assign_AssignSections();
 	obj_CheckAssertions();
 	assign_Cleanup();
 
 	/* and finally output the result. */
 	patch_ApplyPatches();
-	if (nbErrors) {
-		fprintf(stderr, "Linking failed with %" PRIu32 " error%s\n",
-			nbErrors, nbErrors == 1 ? "" : "s");
-		exit(1);
-	}
+	if (nbErrors != 0)
+		reportErrors();
 	out_WriteFiles();
 
 	/* Do cleanup before quitting, though. */
