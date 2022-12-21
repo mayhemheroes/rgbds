@@ -11,14 +11,11 @@ RUN apk add --update \
       libpng-dev
 COPY . /rgbds
 WORKDIR /rgbds
-RUN make Q='' all
+RUN make Q='' all -j8
 
 FROM alpine:latest
 RUN apk add --update \
       libpng
 COPY --from=0 \
   /rgbds/rgbasm \
-  /rgbds/rgbfix \
-  /rgbds/rgblink \
-  /rgbds/rgbgfx \
   /bin/
